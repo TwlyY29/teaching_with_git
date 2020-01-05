@@ -1,0 +1,133 @@
+#!/bin/bash
+
+REMOTEGIT="git@github.com:TwlyY29/openmunich_2019.git" # path to where the course git should be
+
+# https://unix.stackexchange.com/questions/39623/trap-err-and-echoing-the-error-line
+die () {
+  c=$(caller)
+  if [[ $c != 1* ]]; then
+    echo >&2 "$c:"
+    echo >&2 "   $@"
+  else
+    echo >&2 "$@"
+  fi
+  exit 1
+}
+
+trap_with_arg() {
+  func="$1" ; shift
+  for sig ; do
+    trap "$func exiting - caught $sig" "$sig"
+  done
+}
+
+# http://redsymbol.net/articles/bash-exit-traps/
+# wrapper function for signal https://stackoverflow.com/questions/9256644/identifying-received-signal-name-in-bash
+trap_with_arg die ERR HUP INT QUIT TERM SIGHUP SIGINT SIGTERM 
+
+here=$(pwd)
+
+FLIST=commits_thefiles
+if [ ! -f $FLIST ]; then
+  # at first, the file list doesn't exist. so we set up necessary directories and create a list of files.
+  mkdir git && cd git
+  git init --bare
+  cd ..
+  mkdir coursegit && cd coursegit
+  git clone ../git .
+  cd ../completeproject
+  find ./ -type f -print > $FLIST
+  sed -i 's@\./@@g' $FLIST
+  mv $FLIST ../$FLIST
+  cd $here
+  echo "initiated repo successfully. now annotate $FLIST, please"
+else # need annotated $FLIST
+  TAGLIST=commits_thetags
+  if [ ! -f $TAGLIST ]; then
+    # if no taglist is found, we go through the source files and look for patterns indicating tags. these are collected and sorted alphabetically
+    grep -Ehr '^(#|//)(<<|>>)' ./completeproject/* | sed -r 's@(#|//)(<<|>>)@@g' > .tmptaglist
+    grep -Eoh '.* :' $FLIST | sed -r 's/ ://g' >> .tmptaglist
+    sort .tmptaglist | uniq > $TAGLIST
+    rm .tmptaglist
+  fi
+  # go through the file list and copy files for initial commit
+  grep -v ':' $FLIST | while read -r file ; do
+    dir=$(dirname $file)
+    mkdir -p coursegit/$dir
+    cp completeproject/$file coursegit/$file
+    cd coursegit
+    git add $file
+    cd ..
+  done
+  cd $here/coursegit
+  git commit -am "initial commit"
+  git tag "000-get_started"
+  cd $here
+  
+  # go through tag list, prepare the files and do the commits
+  IFS="|" tags=()
+  while read tag ; do
+    echo "--- $tag ---"
+    IFS="|" tags+=( $tag )
+    pat="(${tags[*]})"
+    sed -nre "s/^$pat : //p" $FLIST | while read -r file ; do
+      echo completeproject/$file
+      dir=$(dirname $file)
+      mkdir -p coursegit/$dir
+      # awk is used to show and hide certain parts of source files
+      awk -v pattern="${tags[*]}" '
+        BEGIN {
+          startpat="^(#|\\/\\/)<<"
+          endpat="^(#|\\/\\/)>>"
+          keep="("pattern")"
+          do_print=1
+          unknown_open=0
+        }
+        {
+          if ( $0 ~ startpat) {
+            if( $0 !~ keep ) {
+              do_print=0
+              unknown_open+=1
+            }else{
+              do_print=1
+            }
+            next
+          }
+          if ( $0 ~ endpat) {
+            if( $0 !~ keep ) {
+              do_print=1
+              unknown_open-=1
+            }else{
+              do_print=1
+            }
+            next
+          }
+        }
+        do_print == 1 && unknown_open == 0 {
+          print $0
+        }' completeproject/$file > coursegit/$file
+        cd coursegit
+        git add $file
+        cd ..
+    done
+    FLISTDEL=$FLIST"_delete"
+    if [ -f $FLISTDEL ]; then
+      sed -nre "s/^$tag : //p" $FLISTDEL | while read -r file ; do # look for tag in delete file list
+        cd coursegit
+        git rm $file
+        rm $file
+        cd ..
+      done
+    fi
+    echo "committing"
+    cd coursegit
+    git commit -am "$tag"
+    git tag "$tag"
+    cd ..
+  done < commits_thetags 
+  cd $here/coursegit
+  git remote add upstream $REMOTEGIT
+  git push upstream
+  git push --tags upstream
+fi
+

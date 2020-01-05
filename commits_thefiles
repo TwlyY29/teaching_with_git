@@ -1,0 +1,22 @@
+.gitignore
+core/src/main.cpp
+core/Makefile
+core/fancyalgorithms/fancy_functions.hpp
+100-simple_python : pkg-python/src/fancymodule.cpp
+100-simple_python : pkg-python/Makefile
+100-simple_python : pkg-python/test/fancymodule/__init__.py
+100-simple_python : pkg-python/test/main.py
+500-getting_started_r : pkg-r/Makefile
+500-getting_started_r : pkg-r/helpers/compileAttributes.R
+500-getting_started_r : pkg-r/helpers/init_package.R
+500-getting_started_r : pkg-r/helpers/install.R
+600-first_function : pkg-r/fancypackage/src/Makevars
+600-first_function : pkg-r/fancypackage/src/fancypackage.cpp
+600-first_function : pkg-r/fancypackage/man/fancy_increment.Rd
+600-first_function : pkg-r/fancypackage/man/fancypackage-package.Rd
+600-first_function : pkg-r/fancypackage/NAMESPACE
+600-first_function : pkg-r/fancypackage/DESCRIPTION
+600-first_function : pkg-r/fancypackage/R/zzz.R
+600-first_function : pkg-r/tests/1.R
+600-first_function : pkg-r/test.R
+900-container_r : pkg-r/fancypackage/src/fancyalgorithms/fancy_functions.hpp
