@@ -21,6 +21,49 @@ trap_with_arg() {
   done
 }
 
+copy_with_relevant_parts() {
+  file="$(echo -e "${2}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  
+  echo "completeproject/$file"
+  dir=$(dirname "$file")
+  mkdir -p coursegit/$dir
+  # awk is used to show and hide certain parts of source files
+  awk -v pattern="$1" '
+        BEGIN {
+          startpat="^(#|\\/\\/)<<"
+          endpat="^(#|\\/\\/)>>"
+          keep="("pattern")"
+          do_print=1
+          unknown_open=0
+        }
+        {
+          if ( $0 ~ startpat) {
+            if( $0 !~ keep ) {
+              do_print=0
+              unknown_open+=1
+            }else{
+              do_print=1
+            }
+            next
+          }
+          if ( $0 ~ endpat) {
+            if( $0 !~ keep ) {
+              do_print=1
+              unknown_open-=1
+            }else{
+              do_print=1
+            }
+            next
+          }
+        }
+        do_print == 1 && unknown_open == 0 {
+          print $0
+        }' "completeproject/$file" > "coursegit/$file"
+  cd coursegit
+  git add "$file"
+  cd ..
+}
+
 # http://redsymbol.net/articles/bash-exit-traps/
 # wrapper function for signal https://stackoverflow.com/questions/9256644/identifying-received-signal-name-in-bash
 trap_with_arg die ERR HUP INT QUIT TERM SIGHUP SIGINT SIGTERM 
@@ -54,7 +97,25 @@ else # need annotated $FLIST
   grep -v ':' $FLIST | while read -r file ; do
     dir=$(dirname $file)
     mkdir -p coursegit/$dir
-    cp completeproject/$file coursegit/$file
+    # awk is used to hide any parts of source files inside a tag-block
+    awk '
+        BEGIN {
+          startpat="^(#|\\/\\/)<<"
+          endpat="^(#|\\/\\/)>>"
+          do_print=1
+        }
+        {
+          if ( $0 ~ startpat) {
+            do_print=0
+          }
+          if ( $0 ~ endpat) {
+            do_print=1
+            next
+          }
+        }
+        do_print == 1 {
+          print $0
+        }' completeproject/$file > coursegit/$file
     cd coursegit
     git add $file
     cd ..
@@ -63,52 +124,20 @@ else # need annotated $FLIST
   git commit -am "initial commit"
   git tag "000-get_started"
   cd $here
-  
   # go through tag list, prepare the files and do the commits
   IFS="|" tags=()
   while read tag ; do
     echo "--- $tag ---"
     IFS="|" tags+=( $tag )
     pat="(${tags[*]})"
-    sed -nre "s/^$pat : //p" $FLIST | while read -r file ; do
-      echo completeproject/$file
-      dir=$(dirname $file)
-      mkdir -p coursegit/$dir
-      # awk is used to show and hide certain parts of source files
-      awk -v pattern="${tags[*]}" '
-        BEGIN {
-          startpat="^(#|\\/\\/)<<"
-          endpat="^(#|\\/\\/)>>"
-          keep="("pattern")"
-          do_print=1
-          unknown_open=0
-        }
-        {
-          if ( $0 ~ startpat) {
-            if( $0 !~ keep ) {
-              do_print=0
-              unknown_open+=1
-            }else{
-              do_print=1
-            }
-            next
-          }
-          if ( $0 ~ endpat) {
-            if( $0 !~ keep ) {
-              do_print=1
-              unknown_open-=1
-            }else{
-              do_print=1
-            }
-            next
-          }
-        }
-        do_print == 1 && unknown_open == 0 {
-          print $0
-        }' completeproject/$file > coursegit/$file
-        cd coursegit
-        git add $file
-        cd ..
+    
+    # look for all tags including the current
+    sed -nre "s/^$pat ://p" $FLIST | while read -r file ; do
+      copy_with_relevant_parts "${tags[*]}" "$file"
+    done
+    # look for all files without any tags
+    grep -v ':' $FLIST | while read -r file ; do
+      copy_with_relevant_parts "${tags[*]}" "$file"
     done
     FLISTDEL=$FLIST"_delete"
     if [ -f $FLISTDEL ]; then
@@ -126,8 +155,8 @@ else # need annotated $FLIST
     cd ..
   done < commits_thetags 
   cd $here/coursegit
-  git remote add upstream $REMOTEGIT
-  git push upstream
-  git push --tags upstream
+  #~ git remote add upstream $REMOTEGIT
+  #~ git push upstream
+  #~ git push --tags upstream
 fi
 
